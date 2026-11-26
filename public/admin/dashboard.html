@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kitaab Admin Dashboard</title>
-  <link rel="stylesheet" href="./admin.css" />
+  <base href="/admin/" />
+  <link rel="stylesheet" href="/admin/admin.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -77,7 +78,7 @@
     </form>
   </dialog>
 
-  <script src="./admin.js"></script>
+  <script src="/admin/admin.js"></script>
   <script>
     Admin.requireAuth();
     document.getElementById('logout').onclick = () => Admin.logout();
@@ -149,7 +150,7 @@
             <td>${fmtMoney(j.net_amount)}</td>
             <td>${fmtDate(j.created_at)}</td>
             <td class="actions-cell">
-              <a class="link" href="./jeweller.html?id=${j.id}">Details</a>
+              <a class="link" href="/admin/jeweller.html?id=${j.id}">Details</a>
               <button type="button" class="linkish" data-edit='${JSON.stringify({ id: j.id, name: j.name }).replace(/'/g, "&apos;")}'>Edit</button>
               <button type="button" class="linkish danger" data-del="${j.id}" data-name="${Admin.escape(j.name)}">Delete</button>
             </td>`;

@@ -11,11 +11,11 @@ const Admin = (() => {
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
-    location.href = './index.html';
+    location.href = '/admin/';
   }
 
   function requireAuth() {
-    if (!getToken()) location.href = './index.html';
+    if (!getToken()) location.href = '/admin/';
   }
 
   function escape(s) {

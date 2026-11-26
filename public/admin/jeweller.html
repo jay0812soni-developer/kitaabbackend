@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jeweller details · Kitaab Admin</title>
-  <link rel="stylesheet" href="./admin.css" />
+  <base href="/admin/" />
+  <link rel="stylesheet" href="/admin/admin.css" />
 </head>
 <body>
   <header class="top">
@@ -15,7 +16,7 @@
     </div>
     <div class="actions">
       <button type="button" class="ghost" id="btnCsv">Export CSV</button>
-      <a class="link" href="./dashboard.html">← Dashboard</a>
+      <a class="link" href="/admin/dashboard.html">← Dashboard</a>
       <button type="button" class="ghost" id="logout">Logout</button>
     </div>
   </header>
@@ -68,13 +69,13 @@
     </div>
   </section>
 
-  <script src="./admin.js"></script>
+  <script src="/admin/admin.js"></script>
   <script>
     Admin.requireAuth();
     document.getElementById('logout').onclick = () => Admin.logout();
 
     const id = new URLSearchParams(location.search).get('id');
-    if (!id) location.href = './dashboard.html';
+    if (!id) location.href = '/admin/dashboard.html';
 
     let payload = null;
 
