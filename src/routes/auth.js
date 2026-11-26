@@ -170,21 +170,64 @@ authRouter.get('/security-question', async (req, res) => {
   }
 });
 
+async function assertNotLocked(row) {
+  if (row.lockout_time && new Date(row.lockout_time) > new Date()) {
+    const mins = Math.max(1, Math.ceil((new Date(row.lockout_time) - new Date()) / 60000));
+    return `Too many failed attempts. Try again in ${mins} minute(s).`;
+  }
+  return null;
+}
+
+async function registerRecoveryFailure(jewellerId, fails) {
+  const next = Number(fails || 0) + 1;
+  if (next >= 3) {
+    await query(
+      `UPDATE kitaab.jewellers
+       SET recovery_fails = 0, lockout_time = NOW() + INTERVAL '10 minutes'
+       WHERE id = ?`,
+      [jewellerId]
+    );
+    return {
+      status: 429,
+      message: 'Too many wrong attempts. Locked for 10 minutes.',
+    };
+  }
+  await query(`UPDATE kitaab.jewellers SET recovery_fails = ? WHERE id = ?`, [next, jewellerId]);
+  return {
+    status: 401,
+    message: `Incorrect. You have ${3 - next} attempt(s) left.`,
+  };
+}
+
+async function clearRecoveryFails(jewellerId) {
+  await query(
+    `UPDATE kitaab.jewellers SET recovery_fails = 0, lockout_time = NULL WHERE id = ?`,
+    [jewellerId]
+  );
+}
+
 authRouter.post('/forgot/verify', async (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     const answer = String(req.body.security_answer || '').trim();
     const rows = await query(
-      `SELECT id, security_question, security_answer FROM kitaab.jewellers WHERE LOWER(name) = LOWER(?) LIMIT 1`,
+      `SELECT id, security_question, security_answer, lockout_time, recovery_fails
+       FROM kitaab.jewellers WHERE LOWER(name) = LOWER(?) LIMIT 1`,
       [name]
     );
     if (!rows.length || !rows[0].security_answer) {
       return res.status(404).json({ status: 'error', message: 'Account or security not set' });
     }
+    const locked = await assertNotLocked(rows[0]);
+    if (locked) {
+      return res.status(429).json({ status: 'error', message: locked });
+    }
     const ok = await verifyPasscode(answer.toLowerCase(), rows[0].security_answer);
     if (!ok) {
-      return res.status(401).json({ status: 'error', message: 'Incorrect answer' });
+      const fail = await registerRecoveryFailure(rows[0].id, rows[0].recovery_fails);
+      return res.status(fail.status).json({ status: 'error', message: fail.message });
     }
+    await clearRecoveryFails(rows[0].id);
     return res.json({
       status: 'success',
       jeweller_id: rows[0].id,
@@ -204,18 +247,22 @@ authRouter.post('/forgot/birth-month', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Name and birth month required' });
     }
     const rows = await query(
-      `SELECT id, birth_month, lockout_time FROM kitaab.jewellers WHERE LOWER(name) = LOWER(?) LIMIT 1`,
+      `SELECT id, birth_month, lockout_time, recovery_fails
+       FROM kitaab.jewellers WHERE LOWER(name) = LOWER(?) LIMIT 1`,
       [name]
     );
     if (!rows.length || !rows[0].birth_month) {
       return res.status(404).json({ status: 'error', message: 'Account or birth month not set' });
     }
-    if (rows[0].lockout_time && new Date(rows[0].lockout_time) > new Date()) {
-      return res.status(429).json({ status: 'error', message: 'Too many attempts. Try again later.' });
+    const locked = await assertNotLocked(rows[0]);
+    if (locked) {
+      return res.status(429).json({ status: 'error', message: locked });
     }
     if (String(rows[0].birth_month).toLowerCase() !== birthMonth.toLowerCase()) {
-      return res.status(401).json({ status: 'error', message: 'Incorrect birth month' });
+      const fail = await registerRecoveryFailure(rows[0].id, rows[0].recovery_fails);
+      return res.status(fail.status).json({ status: 'error', message: fail.message });
     }
+    await clearRecoveryFails(rows[0].id);
     return res.json({
       status: 'success',
       jeweller_id: rows[0].id,
@@ -241,10 +288,12 @@ authRouter.post('/reset-passcode', async (req, res) => {
       return res.status(401).json({ status: 'error', message: 'Reset link expired or invalid' });
     }
     const hash = await hashPasscode(newPasscode);
-    await query('UPDATE kitaab.jewellers SET passcode_hash = ?, lockout_time = NULL WHERE id = ?', [
-      hash,
-      jewellerId,
-    ]);
+    await query(
+      `UPDATE kitaab.jewellers
+       SET passcode_hash = ?, lockout_time = NULL, recovery_fails = 0
+       WHERE id = ?`,
+      [hash, jewellerId]
+    );
     return res.json({ status: 'success' });
   } catch (e) {
     console.error(e);

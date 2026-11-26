@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kitaab Admin Dashboard</title>
   <link rel="stylesheet" href="./admin.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header class="top">
@@ -21,16 +22,29 @@
     <div class="stat"><span>Transactions</span><strong id="s-transactions">—</strong></div>
   </section>
 
+  <section class="charts panel">
+    <h2>Insights</h2>
+    <div class="chart-grid">
+      <div class="chart-box"><canvas id="chartOverall"></canvas></div>
+      <div class="chart-box"><canvas id="chartCustomers"></canvas></div>
+      <div class="chart-box"><canvas id="chartTxns"></canvas></div>
+    </div>
+  </section>
+
   <section class="panel">
     <div class="row">
       <h2>Jewellers</h2>
-      <form id="search" class="search">
-        <input id="q" placeholder="Search name" />
-        <input id="from" type="date" />
-        <input id="to" type="date" />
-        <button type="submit">Filter</button>
-      </form>
+      <div class="row-actions">
+        <button type="button" id="btnAdd" class="ghost">Add jeweller</button>
+        <button type="button" id="btnCsv" class="ghost">Export CSV</button>
+      </div>
     </div>
+    <form id="search" class="search">
+      <input id="q" placeholder="Search name" />
+      <input id="from" type="date" />
+      <input id="to" type="date" />
+      <button type="submit">Filter</button>
+    </form>
     <p id="error" class="error" hidden></p>
     <div class="table-wrap">
       <table>
@@ -49,17 +63,52 @@
     </div>
   </section>
 
+  <dialog id="dlg">
+    <form method="dialog" id="jewellerForm" class="dlg-form">
+      <h3 id="dlgTitle">Add jeweller</h3>
+      <input type="hidden" id="editId" />
+      <label>Name<input id="jName" required /></label>
+      <label id="passLabel">Temp passcode<input id="jPass" type="password" placeholder="min 4 chars" /></label>
+      <p id="dlgError" class="error" hidden></p>
+      <div class="dlg-actions">
+        <button type="button" class="ghost" id="dlgCancel">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="./admin.js"></script>
   <script>
     Admin.requireAuth();
     document.getElementById('logout').onclick = () => Admin.logout();
 
-    function fmtDate(v) {
-      if (!v) return '—';
-      return String(v).slice(0, 10);
-    }
+    let charts = {};
+    function fmtDate(v) { return v ? String(v).slice(0, 10) : '—'; }
     function fmtMoney(v) {
       return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+
+    function paintChart(id, labels, data, label) {
+      const ctx = document.getElementById(id);
+      if (charts[id]) charts[id].destroy();
+      charts[id] = new Chart(ctx, {
+        type: id === 'chartOverall' ? 'doughnut' : 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label,
+            data,
+            backgroundColor: ['#0f3d3e', '#c9a227', '#1f7a4c', '#5d6b6b', '#b42318'],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: id === 'chartOverall' } },
+          scales: id === 'chartOverall' ? {} : { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
     }
 
     async function loadOverview() {
@@ -67,15 +116,19 @@
       document.getElementById('s-jewellers').textContent = data.totals.jewellers;
       document.getElementById('s-customers').textContent = data.totals.customers;
       document.getElementById('s-transactions').textContent = data.totals.transactions;
+      const c = data.charts || {};
+      paintChart('chartOverall', c.overall?.labels || [], c.overall?.data || [], 'Totals');
+      paintChart('chartCustomers', c.top_customers?.labels || [], c.top_customers?.data || [], 'Customers');
+      paintChart('chartTxns', c.top_transactions?.labels || [], c.top_transactions?.data || [], 'Transactions');
     }
 
     async function loadJewellers() {
       const err = document.getElementById('error');
       err.hidden = true;
+      const params = new URLSearchParams();
       const q = document.getElementById('q').value.trim();
       const from = document.getElementById('from').value;
       const to = document.getElementById('to').value;
-      const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (from) params.set('from', from);
       if (to) params.set('to', to);
@@ -95,14 +148,106 @@
             <td>${j.transaction_count}</td>
             <td>${fmtMoney(j.net_amount)}</td>
             <td>${fmtDate(j.created_at)}</td>
-            <td><a class="link" href="./jeweller.html?id=${j.id}">Details</a></td>`;
+            <td class="actions-cell">
+              <a class="link" href="./jeweller.html?id=${j.id}">Details</a>
+              <button type="button" class="linkish" data-edit='${JSON.stringify({ id: j.id, name: j.name }).replace(/'/g, "&apos;")}'>Edit</button>
+              <button type="button" class="linkish danger" data-del="${j.id}" data-name="${Admin.escape(j.name)}">Delete</button>
+            </td>`;
           tbody.appendChild(tr);
         }
+        tbody.querySelectorAll('[data-edit]').forEach((btn) => {
+          btn.onclick = () => openEdit(JSON.parse(btn.getAttribute('data-edit')));
+        });
+        tbody.querySelectorAll('[data-del]').forEach((btn) => {
+          btn.onclick = () => deleteJeweller(btn.getAttribute('data-del'), btn.getAttribute('data-name'));
+        });
       } catch (ex) {
         err.textContent = ex.message;
         err.hidden = false;
       }
     }
+
+    const dlg = document.getElementById('dlg');
+    function openAdd() {
+      document.getElementById('dlgTitle').textContent = 'Add jeweller';
+      document.getElementById('editId').value = '';
+      document.getElementById('jName').value = '';
+      document.getElementById('jPass').value = '1234';
+      document.getElementById('passLabel').style.display = '';
+      document.getElementById('dlgError').hidden = true;
+      dlg.showModal();
+    }
+    function openEdit(j) {
+      document.getElementById('dlgTitle').textContent = 'Edit jeweller';
+      document.getElementById('editId').value = j.id;
+      document.getElementById('jName').value = j.name;
+      document.getElementById('jPass').value = '';
+      document.getElementById('passLabel').style.display = '';
+      document.getElementById('jPass').placeholder = 'Leave blank to keep passcode';
+      document.getElementById('dlgError').hidden = true;
+      dlg.showModal();
+    }
+    document.getElementById('btnAdd').onclick = openAdd;
+    document.getElementById('dlgCancel').onclick = () => dlg.close();
+    document.getElementById('jewellerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('editId').value;
+      const name = document.getElementById('jName').value.trim();
+      const passcode = document.getElementById('jPass').value;
+      const err = document.getElementById('dlgError');
+      err.hidden = true;
+      try {
+        if (id) {
+          const body = { name };
+          if (passcode) body.passcode = passcode;
+          await Admin.api('PUT', '/api/admin/jewellers/' + id, body);
+        } else {
+          await Admin.api('POST', '/api/admin/jewellers', { name, passcode: passcode || '1234' });
+        }
+        dlg.close();
+        await loadOverview();
+        await loadJewellers();
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    });
+
+    async function deleteJeweller(id, name) {
+      if (!confirm(`Delete jeweller "${name}" and ALL their customers/transactions?`)) return;
+      try {
+        await Admin.api('DELETE', '/api/admin/jewellers/' + id);
+        await loadOverview();
+        await loadJewellers();
+      } catch (ex) {
+        alert(ex.message);
+      }
+    }
+
+    document.getElementById('btnCsv').onclick = async () => {
+      const params = new URLSearchParams();
+      const q = document.getElementById('q').value.trim();
+      const from = document.getElementById('from').value;
+      const to = document.getElementById('to').value;
+      if (q) params.set('q', q);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      params.set('format', 'csv');
+      const token = Admin.getToken();
+      const res = await fetch('/api/admin/jewellers?' + params.toString(), {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) {
+        alert('CSV export failed');
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'kitaab-jewellers.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
 
     document.getElementById('search').addEventListener('submit', (e) => {
       e.preventDefault();

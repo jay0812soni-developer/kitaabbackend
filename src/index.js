@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { config, missingCriticalEnv } from './config.js';
 import { ensureAdminSeeded } from './auth.js';
+import { ensureSchemaExtras } from './schemaExtras.js';
 import { pool } from './db.js';
 import { authRouter } from './routes/auth.js';
 import { adminRouter } from './routes/admin.js';
@@ -71,6 +72,11 @@ async function boot() {
   const missing = missingCriticalEnv();
   if (missing.length) {
     console.error('Missing env:', missing.join(', '));
+  }
+  try {
+    await ensureSchemaExtras();
+  } catch (e) {
+    console.warn('Schema extras skipped:', e.message);
   }
   try {
     await ensureAdminSeeded();
