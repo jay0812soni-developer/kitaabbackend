@@ -50,10 +50,13 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-app.get('/admin', (_req, res) => {
-  res.redirect(302, '/admin/');
+// Express treats /admin and /admin/ as the same route by default, so a
+// redirect from /admin → /admin/ loops forever. Serve the login page directly.
+const adminDir = path.join(__dirname, '..', 'public', 'admin');
+app.get(['/admin', '/admin/'], (_req, res) => {
+  res.sendFile(path.join(adminDir, 'index.html'));
 });
-app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
+app.use('/admin', express.static(adminDir, { index: false, redirect: false }));
 
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
