@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireJeweller } from '../auth.js';
-import { query, queryResult } from '../db.js';
+import { pool, query, queryResult } from '../db.js';
 
 export const customersRouter = Router();
 customersRouter.use(requireJeweller);
@@ -36,18 +36,38 @@ customersRouter.post('/', async (req, res) => {
 });
 
 customersRouter.delete('/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
     const id = Number(req.params.id);
-    const rows = await query(
-      'DELETE FROM kitaab.customers WHERE id = ? AND jeweller_id = ? RETURNING id',
-      [id, req.jeweller.sub]
+    const jewellerId = req.jeweller.sub;
+    await client.query('BEGIN');
+    const owned = await client.query(
+      'SELECT id FROM kitaab.customers WHERE id = $1 AND jeweller_id = $2 LIMIT 1',
+      [id, jewellerId]
     );
-    if (!rows.length) {
+    if (!owned.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ status: 'error', message: 'Not found' });
     }
+    await client.query(
+      'DELETE FROM kitaab.transactions WHERE customer_id = $1 AND jeweller_id = $2',
+      [id, jewellerId]
+    );
+    await client.query(
+      'DELETE FROM kitaab.customers WHERE id = $1 AND jeweller_id = $2',
+      [id, jewellerId]
+    );
+    await client.query('COMMIT');
     return res.json({ status: 'success' });
   } catch (e) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
     console.error(e);
     return res.status(500).json({ status: 'error', message: 'Delete failed' });
+  } finally {
+    client.release();
   }
 });
