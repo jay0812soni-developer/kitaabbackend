@@ -30,8 +30,8 @@ export const config = {
     folder: env('CLOUDINARY_FOLDER', 'kitaab'),
   },
   admin: {
-    username: env('ADMIN_USERNAME', 'KITAAB_ADMIN'),
-    password: env('ADMIN_PASSWORD', 'ChangeMeStrongPassword!'),
+    username: env('ADMIN_USERNAME', 'admin'),
+    password: env('ADMIN_PASSWORD', 'Jay@111724'),
   },
   jwt: {
     secret: env('JWT_SECRET', 'dev-only-change-me'),

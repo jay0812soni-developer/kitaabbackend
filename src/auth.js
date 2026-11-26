@@ -3,13 +3,21 @@ import bcrypt from 'bcryptjs';
 import { config } from './config.js';
 import { query } from './db.js';
 
+/** Upsert operator admin from env so login always matches ADMIN_USERNAME / ADMIN_PASSWORD */
 export async function ensureAdminSeeded() {
-  const rows = await query(
+  const hash = await bcrypt.hash(config.admin.password, 12);
+  const existing = await query(
     'SELECT id FROM kitaab.admins WHERE username = ? LIMIT 1',
     [config.admin.username]
   );
-  if (rows.length) return;
-  const hash = await bcrypt.hash(config.admin.password, 12);
+  if (existing.length) {
+    await query('UPDATE kitaab.admins SET password_hash = ? WHERE id = ?', [
+      hash,
+      existing[0].id,
+    ]);
+    console.log(`Admin credentials synced: ${config.admin.username}`);
+    return;
+  }
   await query('INSERT INTO kitaab.admins (username, password_hash) VALUES (?, ?)', [
     config.admin.username,
     hash,
@@ -25,6 +33,14 @@ export function signJewellerToken(jeweller) {
   );
 }
 
+export function signAdminToken(admin) {
+  return jwt.sign(
+    { sub: admin.id, name: admin.username, role: 'admin' },
+    config.jwt.secret,
+    { expiresIn: '12h' }
+  );
+}
+
 export function requireJeweller(req, res, next) {
   const header = req.headers.authorization || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
@@ -37,6 +53,24 @@ export function requireJeweller(req, res, next) {
       return res.status(401).json({ status: 'error', message: 'Unauthorized' });
     }
     req.jeweller = payload;
+    next();
+  } catch {
+    return res.status(401).json({ status: 'error', message: 'Invalid token' });
+  }
+}
+
+export function requireAdmin(req, res, next) {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  }
+  try {
+    const payload = jwt.verify(match[1], config.jwt.secret);
+    if (payload.role !== 'admin') {
+      return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    req.admin = payload;
     next();
   } catch {
     return res.status(401).json({ status: 'error', message: 'Invalid token' });

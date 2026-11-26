@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kitaab Admin Dashboard</title>
+  <link rel="stylesheet" href="./admin.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="brand">KITAAB Admin</p>
+      <h1>Dashboard</h1>
+    </div>
+    <button type="button" class="ghost" id="logout">Logout</button>
+  </header>
+
+  <section class="stats" id="stats">
+    <div class="stat"><span>Jewellers</span><strong id="s-jewellers">—</strong></div>
+    <div class="stat"><span>Customers</span><strong id="s-customers">—</strong></div>
+    <div class="stat"><span>Transactions</span><strong id="s-transactions">—</strong></div>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <h2>Jewellers</h2>
+      <form id="search" class="search">
+        <input id="q" placeholder="Search name" />
+        <input id="from" type="date" />
+        <input id="to" type="date" />
+        <button type="submit">Filter</button>
+      </form>
+    </div>
+    <p id="error" class="error" hidden></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Customers</th>
+            <th>Txns</th>
+            <th>Net ₹</th>
+            <th>Joined</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script src="./admin.js"></script>
+  <script>
+    Admin.requireAuth();
+    document.getElementById('logout').onclick = () => Admin.logout();
+
+    function fmtDate(v) {
+      if (!v) return '—';
+      return String(v).slice(0, 10);
+    }
+    function fmtMoney(v) {
+      return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+
+    async function loadOverview() {
+      const data = await Admin.api('GET', '/api/admin/overview');
+      document.getElementById('s-jewellers').textContent = data.totals.jewellers;
+      document.getElementById('s-customers').textContent = data.totals.customers;
+      document.getElementById('s-transactions').textContent = data.totals.transactions;
+    }
+
+    async function loadJewellers() {
+      const err = document.getElementById('error');
+      err.hidden = true;
+      const q = document.getElementById('q').value.trim();
+      const from = document.getElementById('from').value;
+      const to = document.getElementById('to').value;
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      try {
+        const data = await Admin.api('GET', '/api/admin/jewellers?' + params.toString());
+        const tbody = document.getElementById('rows');
+        tbody.innerHTML = '';
+        if (!data.jewellers.length) {
+          tbody.innerHTML = '<tr><td colspan="6">No jewellers found.</td></tr>';
+          return;
+        }
+        for (const j of data.jewellers) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${Admin.escape(j.name)}</td>
+            <td>${j.customer_count}</td>
+            <td>${j.transaction_count}</td>
+            <td>${fmtMoney(j.net_amount)}</td>
+            <td>${fmtDate(j.created_at)}</td>
+            <td><a class="link" href="./jeweller.html?id=${j.id}">Details</a></td>`;
+          tbody.appendChild(tr);
+        }
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    }
+
+    document.getElementById('search').addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadJewellers();
+    });
+
+    loadOverview().catch((e) => {
+      document.getElementById('error').textContent = e.message;
+      document.getElementById('error').hidden = false;
+    });
+    loadJewellers();
+  </script>
+</body>
+</html>

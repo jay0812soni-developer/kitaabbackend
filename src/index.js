@@ -1,13 +1,17 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config, missingCriticalEnv } from './config.js';
 import { ensureAdminSeeded } from './auth.js';
 import { pool } from './db.js';
 import { authRouter } from './routes/auth.js';
+import { adminRouter } from './routes/admin.js';
 import { customersRouter } from './routes/customers.js';
 import { transactionsRouter } from './routes/transactions.js';
 import { apiLimiter, authLimiter, securityHeaders } from './security.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -34,6 +38,7 @@ app.use('/api/auth/forgot', authLimiter);
 app.use('/api/auth/forgot/birth-month', authLimiter);
 app.use('/api/auth/reset-passcode', authLimiter);
 app.use('/api/auth/security-question', authLimiter);
+app.use('/api/admin/login', authLimiter);
 
 app.get('/health', async (_req, res) => {
   try {
@@ -44,7 +49,13 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+app.get('/admin', (_req, res) => {
+  res.redirect(302, '/admin/');
+});
+app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
+
 app.use('/api/auth', authRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/customers', customersRouter);
 app.use('/api/transactions', transactionsRouter);
 
