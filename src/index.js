@@ -31,7 +31,9 @@ app.use('/api/', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/signup', authLimiter);
 app.use('/api/auth/forgot', authLimiter);
+app.use('/api/auth/forgot/birth-month', authLimiter);
 app.use('/api/auth/reset-passcode', authLimiter);
+app.use('/api/auth/security-question', authLimiter);
 
 app.get('/health', async (_req, res) => {
   try {
